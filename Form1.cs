@@ -24,15 +24,15 @@ namespace FuckQL {
         private int apiPort = 14190;
 
         public FuckQL() {
+            CheckForIllegalCrossThreadCalls = false;
             InitializeComponent();
-            Control.CheckForIllegalCrossThreadCalls = false;
-            config = new Config();
             _ = new DarkModeCS(this);
+            config = new Config();
         }
 
         private void Form1_Load(object sender, EventArgs e) {
             if (!File.Exists(@"adb\adb.exe")) {
-                MessageBox.Show("未找到 adb.exe，请检查 adb 目录及 adb\adb.exe 是否存在。", "未找到 adb");
+                MessageBox.Show("未找到 adb.exe，请检查 adb 目录及 adb.exe 是否存在。", "未找到 adb");
                 Application.Exit();
                 return;
             }
