@@ -150,6 +150,8 @@ namespace FuckQL
             // 
             logTextbox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             logTextbox.BackColor = SystemColors.Control;
+            logTextbox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            logTextbox.ForeColor = SystemColors.WindowText;
             logTextbox.Location = new Point(10, 19);
             logTextbox.Multiline = true;
             logTextbox.Name = "logTextbox";

@@ -19,8 +19,9 @@ namespace FuckQL {
         private HttpListener httpListener;
         private string apiToken;
         private bool isLooping = true;
-        private Thread checkThread, httpThread;
+        private Thread checkThread, httpThread, restartThread;
         private int closeWait = 2500;
+        private int apiPort = 14190;
 
         public FuckQL() {
             InitializeComponent();
@@ -30,6 +31,11 @@ namespace FuckQL {
         }
 
         private void Form1_Load(object sender, EventArgs e) {
+            if (!File.Exists(@"adb\adb.exe")) {
+                MessageBox.Show("未找到 adb.exe，请检查 adb 目录及 adb\adb.exe 是否存在。", "未找到 adb");
+                Application.Exit();
+                return;
+            }
             if (!AdbServer.Instance.GetStatus().IsRunning) {
                 AdbServer server = new AdbServer();
                 StartServerResult result = server.StartServer(@"adb\adb.exe", false);
@@ -55,7 +61,14 @@ namespace FuckQL {
 
             // api config
             apiToken = config.GetConfig("apiToken", "123456789");
+            apiPort = config.GetIntConfig("apiPort", 14190);
             closeWait = config.GetIntConfig("closeWait", 2500);
+
+            // Check is config file exists
+            if (!File.Exists("config.ini")) {
+                PrintLog(LogLevel.Info, "Config file not found, creating new one");
+                SaveConfigToFile();
+            }
 
             // 1 Second Tick
             checkThread = new Thread(() =>
@@ -72,13 +85,35 @@ namespace FuckQL {
             });
             checkThread.IsBackground = true;
             checkThread.Start();
+
+            // Restart interval
+            restartThread = new Thread(() =>
+            {
+                while (isLooping) {
+                    if (isConnected && adbClient != null) {
+                        var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+                        if (isStarted) {
+                            deviceClient.StopApp("com.qinlin.edoor");
+                        }
+                        Thread.Sleep(1000);
+                        deviceClient.StartApp("com.qinlin.edoor");
+                    }
+                    Thread.Sleep(60000 * 60);
+                    if (!isLooping) {
+                        break;
+                    }
+                }
+            });
+            restartThread.IsBackground = true;
+            restartThread.Start();
+
             // Http Listener
             httpListener = new HttpListener();
-            httpListener.Prefixes.Add("http://*:14190/");
+            httpListener.Prefixes.Add(String.Format("http://*:{0}/", apiPort));
             httpListener.Start();
             httpThread = new Thread(() =>
             {
-                PrintLog(LogLevel.Info, "Http server listening on port 0.0.0.0:14190");
+                PrintLog(LogLevel.Info, String.Format("Http server listening on port 0.0.0.0:{0}", apiPort));
                 while (isLooping) {
                     var context = httpListener.GetContext();
                     var request = context.Request;
@@ -326,6 +361,10 @@ namespace FuckQL {
         }
 
         private void saveBtn_Click(object sender, EventArgs e) {
+            SaveConfigToFile();
+        }
+
+        private void SaveConfigToFile() {
             // button config
             config.SetConfig("btn1X", btn1X.Text);
             config.SetConfig("btn1Y", btn1Y.Text);
@@ -338,6 +377,7 @@ namespace FuckQL {
             config.SetConfig("adbPort", adbPort.Text);
             // api config
             config.SetConfig("apiToken", apiToken);
+            config.SetConfig("apiPort", apiPort.ToString());
             config.SetConfig("closeWait", closeWait.ToString());
 
             config.SaveConfig();
@@ -382,6 +422,7 @@ namespace FuckQL {
         private void FuckQL_FormClosing(object sender, FormClosingEventArgs e) {
             isConnected = false;
             isLooping = false;
+            if (adbClient == null || adbHost == null || adbPort == null) { return; }
             try {
                 adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
             } catch { }

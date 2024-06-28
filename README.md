@@ -12,9 +12,10 @@
 - 可配置延迟时间
 
 ## 使用方法
-软件需要配合模拟器来进行操作，具体方法如下
 
-> 有显卡的电脑推荐夜神模拟器，没显卡的可以用网易 mumu 模拟器
+> 软件需要安装 [.Net 桌面运行时 8.0](https://dotnet.microsoft.com/zh-cn/download/dotnet/thank-you/runtime-desktop-8.0.6-windows-x64-installer) 才能使用，请先安装运行时。
+
+软件需要配合模拟器来进行操作，有显卡的电脑推荐夜神模拟器，没显卡的可以用网易 mumu 模拟器，具体方法如下：
 
 1. 下载安装任意支持 ADB 的模拟器，建议选择 Android 12 版本
 2. 在模拟器内正常安装此开门软件
