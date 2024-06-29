@@ -1,7 +1,7 @@
-# FuckQL
+# 亲邻不开门
 一款可用于某开门软件的后台自动挂机操作工具
 
-![fuckql](https://github.com/kasuganosoras/FuckQL/assets/34357771/a4b41d74-dfe1-4f23-8bba-bd9689d6d2dd)
+![QLCloseDoor](https://github.com/kasuganosoras/QLCloseDoor/assets/34357771/a4b41d74-dfe1-4f23-8bba-bd9689d6d2dd)
 
 ## 功能介绍
 众所周知某款开门软件广告非常多，如果想要去广告还得充钱，非常影响使用，但小区物业又逼着大家吃这坨史，为了应对这一问题，这款软件诞生了。这款软件可以利用家里闲置的设备或服务器来挂机运行软件，然后通过 API 请求来完成自动化开门操作。
@@ -61,7 +61,7 @@
 
 示例：
 ```
-GET http://fuckql.example.com:14190/click?token=123456789&btn=1
+GET http://123.45.67.89:14190/click?token=123456789&btn=1
 ```
 
 保存快捷方式，然后将它放置到桌面上，你就可以使用桌面快捷方式来一键开门了。

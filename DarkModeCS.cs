@@ -305,8 +305,10 @@ namespace DarkModeForms {
             }
             if (control is Panel panel) {
                 // Process the panel within the container
-                panel.BackColor = OScolors.Surface;
-                panel.BorderStyle = BorderStyle.None;
+                if (!(panel.Parent is SplitContainer)) {
+                    panel.BackColor = OScolors.Surface;
+                    panel.BorderStyle = BorderStyle.None;
+                }
 
                 if (!(panel.Parent is TabControl) || !(panel.Parent is TableLayoutPanel)) {
                     if (RoundedPanels) {
@@ -315,7 +317,7 @@ namespace DarkModeForms {
                 }
             }
             if (control is GroupBox group) {
-                group.BackColor = group.Parent.BackColor;
+                group.BackColor = OScolors.Control;
                 group.ForeColor = OScolors.TextInactive;
             }
             if (control is TableLayoutPanel table) {
@@ -423,6 +425,7 @@ namespace DarkModeForms {
                 //SetRoundBorders(button, 4, OScolors.SurfaceDark, 1);
             }
             if (control is Label label) {
+                label.BackColor = Color.FromArgb(33, 33, 33);
                 label.BorderStyle = BorderStyle.None;
             }
             if (control is LinkLabel link) {

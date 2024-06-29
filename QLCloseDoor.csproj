@@ -7,10 +7,18 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Title>亲临不开门</Title>
+    <Description>亲邻开门自动挂机工具</Description>
+    <Copyright>©2024 ZERODREAM</Copyright>
+    <PackageProjectUrl>https://github.com/kasuganosoras</PackageProjectUrl>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="AdvancedSharpAdbClient" Version="3.3.12" />
   </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="call &quot;$(ProjectDir)\AfterBuild.bat&quot; &quot;$(OutDir)&quot;" />
+  </Target>
 
 </Project>

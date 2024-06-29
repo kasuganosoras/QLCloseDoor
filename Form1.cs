@@ -7,9 +7,10 @@ using System.Net;
 using System.Web;
 using DarkModeForms;
 using System.Drawing.Imaging;
+using Microsoft.Win32;
 
-namespace FuckQL {
-    public partial class FuckQL : Form {
+namespace QLCloseDoor {
+    public partial class QLCloseDoor : Form {
 
         private AdbClient adbClient;
         private DeviceClient deviceClient;
@@ -23,11 +24,39 @@ namespace FuckQL {
         private int closeWait = 2500;
         private int apiPort = 14190;
 
-        public FuckQL() {
+        public QLCloseDoor() {
             CheckForIllegalCrossThreadCalls = false;
             InitializeComponent();
-            _ = new DarkModeCS(this);
+            if (IsUsingDarkTheme()) {
+                _ = new DarkModeCS(this);
+                groupBox1.Paint += groupBox1_Paint;
+                //groupBox2.Paint += groupBox1_Paint;
+                groupBox3.Paint += groupBox1_Paint;
+                groupBox4.Paint += groupBox1_Paint;
+                groupBox5.Paint += groupBox1_Paint;
+                splitContainer1.BackColor = Color.FromArgb(33, 33, 33);
+                // splitContainer1.Panel1.BackColor = Color.FromArgb(33, 33, 33);
+                // splitContainer1.Panel2.BackColor = Color.FromArgb(33, 33, 33);
+                // splitContainer1.Paint += SplitterPaint;
+            } else {
+                groupBox1.Paint -= groupBox1_Paint;
+                // groupBox2.Paint -= groupBox1_Paint;
+                groupBox3.Paint -= groupBox1_Paint;
+                groupBox4.Paint -= groupBox1_Paint;
+                groupBox5.Paint -= groupBox1_Paint;
+            }
             config = new Config();
+        }
+
+        private bool IsUsingDarkTheme() {
+            RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key != null) {
+                var theme = key.GetValue("AppsUseLightTheme");
+                if (theme != null) {
+                    return theme.ToString() == "0";
+                }
+            }
+            return false;
         }
 
         private void Form1_Load(object sender, EventArgs e) {
@@ -40,12 +69,12 @@ namespace FuckQL {
                 AdbServer server = new AdbServer();
                 StartServerResult result = server.StartServer(@"adb\adb.exe", false);
                 if (result != StartServerResult.Started) {
-                    PrintLog(LogLevel.Error, "Can't start adb server");
+                    PrintLog(LogLevel.Error, "无法启动 ADB 服务器");
                 } else {
-                    PrintLog(LogLevel.Info, "adb server started");
+                    PrintLog(LogLevel.Info, "ADB 服务器已启动");
                 }
             } else {
-                PrintLog(LogLevel.Info, "adb server is running");
+                PrintLog(LogLevel.Info, "ADB 服务器已在运行中");
             }
             // config
             btn1X.Text = config.GetConfig("btn1X", "541");
@@ -66,9 +95,11 @@ namespace FuckQL {
 
             // Check is config file exists
             if (!File.Exists("config.ini")) {
-                PrintLog(LogLevel.Info, "Config file not found, creating new one");
+                PrintLog(LogLevel.Info, "配置文件不存在，正在创建...");
                 SaveConfigToFile();
             }
+
+            PrintLog(LogLevel.Info, "配置项加载成功");
 
             // 1 Second Tick
             checkThread = new Thread(() =>
@@ -80,6 +111,11 @@ namespace FuckQL {
                     Thread.Sleep(1000);
                     if (!isLooping) {
                         break;
+                    }
+                    if (isConnected) {
+                        connectStatus.Text = "状态：已连接 ADB";
+                    } else {
+                        connectStatus.Text = "状态：未连接 ADB";
                     }
                 }
             });
@@ -113,7 +149,7 @@ namespace FuckQL {
             httpListener.Start();
             httpThread = new Thread(() =>
             {
-                PrintLog(LogLevel.Info, String.Format("Http server listening on port 0.0.0.0:{0}", apiPort));
+                PrintLog(LogLevel.Info, String.Format("API 服务器监听端口：0.0.0.0:{0}", apiPort));
                 while (isLooping) {
                     var context = httpListener.GetContext();
                     var request = context.Request;
@@ -224,6 +260,8 @@ namespace FuckQL {
                 }
             } catch (Exception e) {
                 PrintLog(LogLevel.Error, e.Message);
+                stopApp.Enabled = false;
+                startApp.Enabled = false;
             }
         }
 
@@ -249,15 +287,15 @@ namespace FuckQL {
                 adbClient = new AdbClient();
             }
             var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
-            PrintLog(LogLevel.Info, "Connected to adb server: " + result);
+            PrintLog(LogLevel.Info, "连接到 ADB 服务器：" + result);
             deviceData = adbClient.GetDevices().FirstOrDefault();
             if (deviceData != null) {
                 deviceClient = new DeviceClient(adbClient, deviceData);
-                PrintLog(LogLevel.Info, "Connect: " + deviceData.Name);
+                PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
                 SetAdbConfigEnabled(false);
                 isConnected = true;
             } else {
-                PrintLog(LogLevel.Error, "No device connected");
+                PrintLog(LogLevel.Error, "未找到可用的设备，请检查模拟器是否在运行中！");
                 SetAdbConfigEnabled(true);
                 isConnected = false;
             }
@@ -273,7 +311,7 @@ namespace FuckQL {
 
         private void disconnectBtn_Click(object sender, EventArgs e) {
             var result = adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
-            PrintLog(LogLevel.Info, "Disconnect: " + result);
+            PrintLog(LogLevel.Info, "已断开连接：" + result);
             SetAdbConfigEnabled(true);
             isConnected = false;
         }
@@ -291,7 +329,7 @@ namespace FuckQL {
 
         private void ClickButton(int BtnId) {
             if (deviceClient == null) {
-                PrintLog(LogLevel.Error, "No device connected");
+                PrintLog(LogLevel.Error, "当前未连接到设备。");
                 return;
             }
             ScreenPos pos = null;
@@ -308,10 +346,10 @@ namespace FuckQL {
             }
             if (pos != null) {
                 deviceClient.ClickAsync(pos.X, pos.Y);
-                PrintLog(LogLevel.Info, "Click button " + BtnId);
+                PrintLog(LogLevel.Info, "发送屏幕点击请求：" + BtnId);
                 CloseAd();
             } else {
-                PrintLog(LogLevel.Error, "Invalid button " + BtnId + " position");
+                PrintLog(LogLevel.Error, "无效的按钮：" + BtnId + "（无法获取坐标）");
             }
         }
 
@@ -395,7 +433,7 @@ namespace FuckQL {
                                                box.ClientRectangle.Height - (int)(strSize.Height / 2) - 1);
 
                 // Clear text and border
-                g.Clear(this.BackColor);
+                g.Clear(Color.FromArgb(33, 33, 33));
 
                 // Draw text
                 g.DrawString(box.Text, box.Font, textBrush, box.Padding.Left, 0);
@@ -417,6 +455,18 @@ namespace FuckQL {
         private void groupBox1_Paint(object sender, PaintEventArgs e) {
             GroupBox box = sender as GroupBox;
             DrawGroupBox(box, e.Graphics, Color.FromArgb(200, 200, 200), Color.FromArgb(80, 150, 150, 150));
+        }
+
+        private void SplitterPaint(object sender, PaintEventArgs e) {
+            SplitContainer s = sender as SplitContainer;
+            if (s != null) {
+                int top = 5;
+                int bottom = s.Height - 5;
+                int left = s.SplitterDistance;
+                int right = left + s.SplitterWidth - 1;
+                e.Graphics.DrawLine(Pens.Silver, left, top, left, bottom);
+                e.Graphics.DrawLine(Pens.Silver, right, top, right, bottom);
+            }
         }
 
         private void FuckQL_FormClosing(object sender, FormClosingEventArgs e) {
