@@ -123,6 +123,7 @@ namespace QLCloseDoor
             saveBtn.TabIndex = 9;
             saveBtn.Text = "保存配置";
             saveBtn.UseVisualStyleBackColor = true;
+            saveBtn.Click += saveBtn_Click;
             // 
             // btn3Y
             // 
@@ -231,6 +232,7 @@ namespace QLCloseDoor
             button3.TabIndex = 6;
             button3.Text = "开门按钮 3";
             button3.UseVisualStyleBackColor = true;
+            button3.Click += button3_Click;
             // 
             // button2
             // 
@@ -242,6 +244,7 @@ namespace QLCloseDoor
             button2.TabIndex = 5;
             button2.Text = "开门按钮 2";
             button2.UseVisualStyleBackColor = true;
+            button2.Click += button2_Click;
             // 
             // button1
             // 
@@ -253,6 +256,7 @@ namespace QLCloseDoor
             button1.TabIndex = 4;
             button1.Text = "开门按钮 1";
             button1.UseVisualStyleBackColor = true;
+            button1.Click += button1_Click_1;
             // 
             // groupBox3
             // 
@@ -288,6 +292,7 @@ namespace QLCloseDoor
             stopApp.TabIndex = 1;
             stopApp.Text = "停止应用";
             stopApp.UseVisualStyleBackColor = true;
+            stopApp.Click += stopApp_Click;
             // 
             // startApp
             // 
@@ -300,6 +305,7 @@ namespace QLCloseDoor
             startApp.TabIndex = 0;
             startApp.Text = "启动应用";
             startApp.UseVisualStyleBackColor = true;
+            startApp.Click += startApp_Click;
             // 
             // groupBox1
             // 
@@ -328,6 +334,7 @@ namespace QLCloseDoor
             disconnectBtn.TabIndex = 5;
             disconnectBtn.Text = "断开";
             disconnectBtn.UseVisualStyleBackColor = true;
+            disconnectBtn.Click += disconnectBtn_Click;
             // 
             // connectBtn
             // 
@@ -339,6 +346,7 @@ namespace QLCloseDoor
             connectBtn.TabIndex = 4;
             connectBtn.Text = "连接";
             connectBtn.UseVisualStyleBackColor = true;
+            connectBtn.Click += connectBtn_Click;
             // 
             // label2
             // 

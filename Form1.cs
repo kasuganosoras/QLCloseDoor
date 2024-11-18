@@ -8,6 +8,7 @@ using System.Web;
 using DarkModeForms;
 using System.Drawing.Imaging;
 using Microsoft.Win32;
+using System.Diagnostics;
 
 namespace QLCloseDoor {
     public partial class QLCloseDoor : Form {
@@ -23,8 +24,32 @@ namespace QLCloseDoor {
         private Thread checkThread, httpThread, restartThread;
         private int closeWait = 2500;
         private int apiPort = 14190;
+        private bool autoLockScreen = false;
+        private NotifyIcon notifyIcon;
+        private ContextMenuStrip contextMenu;
 
         public QLCloseDoor() {
+            // 初始化 NotifyIcon
+            notifyIcon = new NotifyIcon();
+            notifyIcon.Icon = this.Icon;
+            notifyIcon.Text = "QLCloseDoor";
+            notifyIcon.Visible = true;
+
+            // 创建右键菜单
+            contextMenu = new ContextMenuStrip();
+            contextMenu.Items.Add("连接设备", null, SwitchConnect_Click);
+            // 切换 App
+            var switchAppMenu = new ToolStripMenuItem("启动应用", null, SwitchApp_Click);
+            switchAppMenu.Enabled = false;
+            contextMenu.Items.Add(switchAppMenu);
+            contextMenu.Items.Add(new ToolStripSeparator());
+            contextMenu.Items.Add("显示主窗口", null, Open_Click);
+            contextMenu.Items.Add("退出", null, Exit_Click);
+            notifyIcon.ContextMenuStrip = contextMenu;
+
+            // 处理窗体最小化事件
+            this.Resize += new EventHandler(Form_Resize);
+
             CheckForIllegalCrossThreadCalls = false;
             InitializeComponent();
             if (IsUsingDarkTheme()) {
@@ -46,6 +71,67 @@ namespace QLCloseDoor {
                 groupBox5.Paint -= groupBox1_Paint;
             }
             config = new Config();
+        }
+        private void Form_Resize(object sender, EventArgs e) {
+            if (this.WindowState == FormWindowState.Minimized) {
+                this.Hide();
+                notifyIcon.ShowBalloonTip(1000, "提示", "应用程序已最小化到托盘", ToolTipIcon.Info);
+            }
+        }
+
+        private void SwitchApp_Click(object sender, EventArgs e) {
+            if (!isConnected) {
+                notifyIcon.ShowBalloonTip(1000, "错误", "当前还未连接到设备", ToolTipIcon.Error);
+                return;
+            }
+            var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+            if (isStarted) {
+                stopAppCmd("com.qinlin.edoor");
+                notifyIcon.ShowBalloonTip(1000, "提示", "已尝试停止应用", ToolTipIcon.Info);
+            } else {
+                startAppCmd("com.qinlin.edoor/.MainActivity");
+                notifyIcon.ShowBalloonTip(1000, "提示", "已尝试启动应用", ToolTipIcon.Info);
+            }
+        }
+
+        private void SwitchConnect_Click(object sender, EventArgs e) {
+            if (isConnected) {
+                var result = adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                PrintLog(LogLevel.Info, "已断开连接：" + result);
+                SetAdbConfigEnabled(true);
+                isConnected = false;
+                notifyIcon.ShowBalloonTip(1000, "提示", "已断开连接", ToolTipIcon.Info);
+            } else {
+                if (adbClient == null) {
+                    adbClient = new AdbClient();
+                }
+                PrintLog(LogLevel.Info, "正在尝试连接：" + adbHost.Text + ":" + adbPort.Text);
+                var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                PrintLog(LogLevel.Info, "连接到 ADB 服务器：" + result);
+                deviceData = adbClient.GetDevices().First();
+                if (deviceData != null) {
+                    deviceClient = new DeviceClient(adbClient, deviceData);
+                    PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
+                    SetAdbConfigEnabled(false);
+                    isConnected = true;
+                    notifyIcon.ShowBalloonTip(1000, "提示", "已连接：" + deviceData.Name, ToolTipIcon.Info);
+                } else {
+                    PrintLog(LogLevel.Error, "未找到可用的设备，请检查模拟器是否在运行中！");
+                    SetAdbConfigEnabled(true);
+                    isConnected = false;
+                    notifyIcon.ShowBalloonTip(1000, "错误", "未找到可用的设备，请检查模拟器是否在运行中！", ToolTipIcon.Error);
+                }
+            }
+        }
+
+        private void Open_Click(object sender, EventArgs e) {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+        }
+
+        private void Exit_Click(object sender, EventArgs e) {
+            notifyIcon.Visible = false;
+            Application.Exit();
         }
 
         private bool IsUsingDarkTheme() {
@@ -92,6 +178,7 @@ namespace QLCloseDoor {
             apiToken = config.GetConfig("apiToken", "123456789");
             apiPort = config.GetIntConfig("apiPort", 14190);
             closeWait = config.GetIntConfig("closeWait", 2500);
+            autoLockScreen = config.GetBoolConfig("autoLockScreen", false);
 
             // Check is config file exists
             if (!File.Exists("config.ini")) {
@@ -114,8 +201,10 @@ namespace QLCloseDoor {
                     }
                     if (isConnected) {
                         connectStatus.Text = "状态：已连接 ADB";
+                        contextMenu.Items[0].Text = "断开连接";
                     } else {
                         connectStatus.Text = "状态：未连接 ADB";
+                        contextMenu.Items[0].Text = "连接设备";
                     }
                 }
             });
@@ -129,10 +218,10 @@ namespace QLCloseDoor {
                     if (isConnected && adbClient != null) {
                         var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
                         if (isStarted) {
-                            deviceClient.StopApp("com.qinlin.edoor");
+                            stopAppCmd("com.qinlin.edoor");
                         }
                         Thread.Sleep(1000);
-                        deviceClient.StartApp("com.qinlin.edoor");
+                        startAppCmd("com.qinlin.edoor/.MainActivity");
                     }
                     Thread.Sleep(60000 * 60);
                     if (!isLooping) {
@@ -156,15 +245,14 @@ namespace QLCloseDoor {
                     var response = context.Response;
                     var url = request.Url.AbsolutePath;
                     var query = request.Url.Query;
-                    if (url == "/click") {
-                        // verify token
-                        var token = HttpUtility.ParseQueryString(query).Get("token");
-                        if (token != apiToken) {
-                            response.StatusCode = 403;
-                            response.StatusDescription = "Forbidden";
-                            response.Close();
-                            continue;
-                        }
+                    // verify token
+                    var token = HttpUtility.ParseQueryString(query).Get("token");
+                    if (token != apiToken) {
+                        response.StatusCode = 403;
+                        response.StatusDescription = "Forbidden";
+                        response.Close();
+                        continue;
+                    } else if (url == "/click") {
                         // click button
                         var btnId = HttpUtility.ParseQueryString(query).Get("btn");
                         if (btnId != null) {
@@ -196,14 +284,6 @@ namespace QLCloseDoor {
                             }
                         }
                     } else if (url == "/screenshot") {
-                        // verify token
-                        var token = HttpUtility.ParseQueryString(query).Get("token");
-                        if (token != apiToken) {
-                            response.StatusCode = 403;
-                            response.StatusDescription = "Forbidden";
-                            response.Close();
-                            continue;
-                        }
                         // take screenshot
                         if (deviceClient != null) {
                             var screenshot = adbClient.GetFrameBuffer(deviceData);
@@ -214,24 +294,24 @@ namespace QLCloseDoor {
                             image.Save(response.OutputStream, ImageFormat.Png);
                         }
                     } else if (url == "/restart") {
-                        // verify token
-                        var token = HttpUtility.ParseQueryString(query).Get("token");
-                        if (token != apiToken) {
-                            response.StatusCode = 403;
-                            response.StatusDescription = "Forbidden";
-                            response.Close();
-                            continue;
-                        }
                         // restart app
                         if (deviceClient != null) {
-                            deviceClient.StopApp("com.qinlin.edoor");
+                            stopAppCmd("com.qinlin.edoor");
                             Thread.Sleep(1000);
-                            deviceClient.StartApp("com.qinlin.edoor");
+                            startAppCmd("com.qinlin.edoor/.MainActivity");
                             response.StatusCode = 200;
                             response.StatusDescription = "OK";
                         } else {
                             response.StatusCode = 404;
                             response.StatusDescription = "Not Found";
+                        }
+                    } else if (url == "/powerbtn") {
+                        if (deviceClient != null) {
+                            powerBtn();
+                        }
+                    } else if (url == "/unlock") {
+                        if (deviceClient != null) {
+                            unlockScreen();
                         }
                     } else {
                         response.StatusCode = 404;
@@ -247,15 +327,27 @@ namespace QLCloseDoor {
         private void ProcessUpdate() {
             try {
                 if (adbClient != null && deviceClient != null) {
-                    var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
-                    if (isStarted) {
-                        appStatus.Text = "应用运行中";
-                        startApp.Enabled = false;
-                        stopApp.Enabled = true;
+                    if (isConnected) {
+                        var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+                        if (isStarted) {
+                            appStatus.Text = "应用运行中";
+                            startApp.Enabled = false;
+                            stopApp.Enabled = true;
+                            contextMenu.Items[1].Enabled = true;
+                            contextMenu.Items[1].Text = "停止应用";
+                        } else {
+                            appStatus.Text = "应用未运行";
+                            startApp.Enabled = true;
+                            stopApp.Enabled = false;
+                            contextMenu.Items[1].Enabled = true;
+                            contextMenu.Items[1].Text = "启动应用";
+                        }
                     } else {
                         appStatus.Text = "应用未运行";
-                        startApp.Enabled = true;
+                        startApp.Enabled = false;
                         stopApp.Enabled = false;
+                        contextMenu.Items[1].Enabled = false;
+                        contextMenu.Items[1].Text = "启动应用";
                     }
                 }
             } catch (Exception e) {
@@ -286,9 +378,10 @@ namespace QLCloseDoor {
             if (adbClient == null) {
                 adbClient = new AdbClient();
             }
+            PrintLog(LogLevel.Info, "正在尝试连接：" + adbHost.Text + ":" + adbPort.Text);
             var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
             PrintLog(LogLevel.Info, "连接到 ADB 服务器：" + result);
-            deviceData = adbClient.GetDevices().FirstOrDefault();
+            deviceData = adbClient.GetDevices().First();
             if (deviceData != null) {
                 deviceClient = new DeviceClient(adbClient, deviceData);
                 PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
@@ -302,11 +395,81 @@ namespace QLCloseDoor {
         }
 
         private void startApp_Click(object sender, EventArgs e) {
-            deviceClient.StartApp("com.qinlin.edoor");
+            startAppCmd("com.qinlin.edoor/.MainActivity");
+            PrintLog(LogLevel.Info, "已尝试启动应用");
         }
 
         private void stopApp_Click(object sender, EventArgs e) {
-            deviceClient.StopApp("com.qinlin.edoor");
+            stopAppCmd("com.qinlin.edoor");
+            PrintLog(LogLevel.Info, "已尝试停止应用");
+        }
+
+        private void startAppCmd(string packageName) {
+            executeAdbCmd(String.Format("shell am start {0}", packageName));
+        }
+
+        private void stopAppCmd(string packageName) {
+            executeAdbCmd(String.Format("shell am force-stop {0}", packageName));
+        }
+
+        private void powerBtn() {
+            executeAdbCmd("shell input keyevent 26");
+        }
+
+        private void unlockScreen() {
+            executeAdbCmd("shell input swipe 300 1000 300 500");
+        }
+
+        private int getScreenState() {
+            string result = executeAdbCmd("shell dumpsys window policy");
+            int state = 0;
+            if (result.Contains("showing=true")) {
+                state = 1;
+                if (result.Contains("screenState=2")) {
+                    state = 2;
+                }
+            }
+            return state;
+        }
+
+        private void executeAdbCmd(string cmd, bool waitForExit =  false) {
+            if (!isConnected) return;
+
+            // 创建一个新的进程启动信息
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = "adb\\adb.exe";
+            startInfo.Arguments = cmd;
+            startInfo.RedirectStandardOutput = false;
+            startInfo.UseShellExecute = false;
+            startInfo.CreateNoWindow = true;
+
+            // 启动进程
+            Process process = Process.Start(startInfo);
+            if (waitForExit && process != null && process.Id > 0) {
+                process.WaitForExit();
+            }
+        }
+
+        private string executeAdbCmd(string cmd) {
+            if (!isConnected) return "";
+
+            // 创建一个新的进程启动信息
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = "adb\\adb.exe";
+            startInfo.Arguments = cmd;
+            startInfo.RedirectStandardOutput = true;
+            startInfo.UseShellExecute = false;
+            startInfo.CreateNoWindow = true;
+
+            string result = "";
+            // 启动进程并读取输出
+            using (Process process = Process.Start(startInfo)) {
+                using (System.IO.StreamReader reader = process.StandardOutput) {
+                    result += reader.ReadToEnd();
+                }
+            }
+
+            return result;
         }
 
         private void disconnectBtn_Click(object sender, EventArgs e) {
@@ -320,9 +483,13 @@ namespace QLCloseDoor {
             Thread thread = new Thread(() =>
             {
                 Thread.Sleep(closeWait);
-                deviceClient.StopApp("com.qinlin.edoor");
-                Thread.Sleep(1000);
-                deviceClient.StartApp("com.qinlin.edoor");
+                stopAppCmd("com.qinlin.edoor");
+                Thread.Sleep(300);
+                startAppCmd("com.qinlin.edoor/.MainActivity");
+                if (autoLockScreen) {
+                    Thread.Sleep(1000);
+                    powerBtn();
+                }
             });
             thread.Start();
         }
@@ -345,6 +512,16 @@ namespace QLCloseDoor {
                     break;
             }
             if (pos != null) {
+                int state = getScreenState();
+                if (state == 1) {
+                    powerBtn();
+                    Thread.Sleep(500);
+                    unlockScreen();
+                    Thread.Sleep(1000);
+                } else if (state == 2) {
+                    unlockScreen();
+                    Thread.Sleep(1000);
+                }
                 deviceClient.ClickAsync(pos.X, pos.Y);
                 PrintLog(LogLevel.Info, "发送屏幕点击请求：" + BtnId);
                 CloseAd();
@@ -400,6 +577,7 @@ namespace QLCloseDoor {
 
         private void saveBtn_Click(object sender, EventArgs e) {
             SaveConfigToFile();
+            PrintLog(LogLevel.Info, "配置文件已保存");
         }
 
         private void SaveConfigToFile() {
@@ -417,6 +595,7 @@ namespace QLCloseDoor {
             config.SetConfig("apiToken", apiToken);
             config.SetConfig("apiPort", apiPort.ToString());
             config.SetConfig("closeWait", closeWait.ToString());
+            config.SetConfig("autoLockScreen", autoLockScreen.ToString());
 
             config.SaveConfig();
         }
