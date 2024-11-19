@@ -287,11 +287,11 @@ namespace QLCloseDoor {
                         // take screenshot
                         if (deviceClient != null) {
                             var screenshot = adbClient.GetFrameBuffer(deviceData);
-                            response.ContentType = "image/png";
+                            response.ContentType = "image/jpeg";
                             response.StatusCode = 200;
                             response.StatusDescription = "OK";
                             Image image = screenshot.ToImage();
-                            image.Save(response.OutputStream, ImageFormat.Png);
+                            image.Save(response.OutputStream, ImageFormat.Jpeg);
                         }
                     } else if (url == "/restart") {
                         // restart app
@@ -378,19 +378,23 @@ namespace QLCloseDoor {
             if (adbClient == null) {
                 adbClient = new AdbClient();
             }
-            PrintLog(LogLevel.Info, "正在尝试连接：" + adbHost.Text + ":" + adbPort.Text);
-            var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
-            PrintLog(LogLevel.Info, "连接到 ADB 服务器：" + result);
-            deviceData = adbClient.GetDevices().First();
-            if (deviceData != null) {
-                deviceClient = new DeviceClient(adbClient, deviceData);
-                PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
-                SetAdbConfigEnabled(false);
-                isConnected = true;
-            } else {
-                PrintLog(LogLevel.Error, "未找到可用的设备，请检查模拟器是否在运行中！");
-                SetAdbConfigEnabled(true);
-                isConnected = false;
+            PrintLog(LogLevel.Info, String.Format("正在尝试连接：{0}:{1}", adbHost.Text, adbPort.Text));
+            try {
+                var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                PrintLog(LogLevel.Info, "连接信息：" + result);
+                deviceData = adbClient.GetDevices().FirstOrDefault();
+                if (deviceData != null && deviceData != default && !result.Contains("cannot")) {
+                    deviceClient = new DeviceClient(adbClient, deviceData);
+                    PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
+                    SetAdbConfigEnabled(false);
+                    isConnected = true;
+                } else {
+                    PrintLog(LogLevel.Error, "无法连接到设备，请检查 IP 地址和端口是否正确，模拟器/设备是否在运行中！");
+                    SetAdbConfigEnabled(true);
+                    isConnected = false;
+                }
+            } catch(Exception ex) {
+                PrintLog(LogLevel.Error, ex.Message);
             }
         }
 
@@ -473,8 +477,12 @@ namespace QLCloseDoor {
         }
 
         private void disconnectBtn_Click(object sender, EventArgs e) {
-            var result = adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
-            PrintLog(LogLevel.Info, "已断开连接：" + result);
+            try {
+                var result = adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                PrintLog(LogLevel.Info, "已断开连接：" + result);
+            } catch(Exception ex) {
+                PrintLog(LogLevel.Error, ex.Message);
+            }
             SetAdbConfigEnabled(true);
             isConnected = false;
         }
@@ -523,10 +531,10 @@ namespace QLCloseDoor {
                     Thread.Sleep(1000);
                 }
                 deviceClient.ClickAsync(pos.X, pos.Y);
-                PrintLog(LogLevel.Info, "发送屏幕点击请求：" + BtnId);
+                PrintLog(LogLevel.Info, String.Format("已发送屏幕点击请求：Btn ({0})", BtnId));
                 CloseAd();
             } else {
-                PrintLog(LogLevel.Error, "无效的按钮：" + BtnId + "（无法获取坐标）");
+                PrintLog(LogLevel.Error, String.Format("无效的按钮：{0}（无法获取坐标）", BtnId));
             }
         }
 
