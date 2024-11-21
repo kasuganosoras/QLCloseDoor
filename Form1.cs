@@ -318,7 +318,9 @@ namespace RemoteAndroid {
                         response.StatusDescription = "OK";
                         response.ContentType = "text/html";
                         response.ContentLength64 = bytes.Length;
-                        output.Write(bytes, 0, bytes.Length);
+                        // output.Write(bytes, 0, bytes.Length);
+                        response.Close(bytes, true);
+                        continue;
                     } else if (url == "/info") {
                         try {
                             if (DateTime.Now.Subtract(lastCacheInfo).TotalMilliseconds > 2000) {
@@ -344,7 +346,9 @@ namespace RemoteAndroid {
                                 response.StatusDescription = "OK";
                                 response.ContentType = "application/json";
                                 response.ContentLength64 = bytes.Length;
-                                output.Write(bytes, 0, bytes.Length);
+                                // output.Write(bytes, 0, bytes.Length);
+                                response.Close(bytes, true);
+                                continue;
                             } else {
                                 var json = Newtonsoft.Json.JsonConvert.SerializeObject(cachedInfo);
                                 byte[] bytes = Encoding.UTF8.GetBytes(json);
@@ -352,7 +356,9 @@ namespace RemoteAndroid {
                                 response.StatusDescription = "OK";
                                 response.ContentType = "application/json";
                                 response.ContentLength64 = bytes.Length;
-                                output.Write(bytes, 0, bytes.Length);
+                                // output.Write(bytes, 0, bytes.Length);
+                                response.Close(bytes, true);
+                                continue;
                             }
                         } catch (Exception ex) {
                             var logLines = logTextbox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
@@ -370,7 +376,9 @@ namespace RemoteAndroid {
                             response.StatusDescription = "OK";
                             response.ContentType = "application/json";
                             response.ContentLength64 = bytes.Length;
-                            output.Write(bytes, 0, bytes.Length);
+                            // output.Write(bytes, 0, bytes.Length);
+                            response.Close(bytes, true);
+                            continue;
                         }
                     } else if (url == "/click") {
                         // click button
@@ -403,6 +411,27 @@ namespace RemoteAndroid {
                                 response.StatusDescription = "Bad Request";
                             }
                         }
+                    } else if (url == "/swipe") {
+                        var x1 = HttpUtility.ParseQueryString(query).Get("x1");
+                        var y1 = HttpUtility.ParseQueryString(query).Get("y1");
+                        var x2 = HttpUtility.ParseQueryString(query).Get("x2");
+                        var y2 = HttpUtility.ParseQueryString(query).Get("y2");
+                        var sp = HttpUtility.ParseQueryString(query).Get("sp");
+                        if (x1 != null && y1 != null && x2 != null & y2 != null) {
+                            int intX1, intY1, intX2, intY2, speed;
+                            if (int.TryParse(x1, out intX1) && int.TryParse(y1, out intY1) && int.TryParse(x2, out intX2) && int.TryParse(y2, out intY2) && int.TryParse(sp, out speed)) {
+                                deviceClient.SwipeAsync(intX1, intY1, intX2, intY2, speed);
+                                // executeAdbCmd(string.Format("shell input swipe {0} {1} {2} {3} {4}", intX1, intY1, intX2, intY2, speed));
+                                response.StatusCode = 200;
+                                response.StatusDescription = "OK";
+                            } else {
+                                response.StatusCode = 400;
+                                response.StatusDescription = "Bad Request";
+                            }
+                        } else {
+                            response.StatusCode = 400;
+                            response.StatusDescription = "Bad Request";
+                        }
                     } else if (url == "/screenshot") {
                         // take screenshot
                         if (deviceClient != null) {
@@ -410,7 +439,24 @@ namespace RemoteAndroid {
                             response.StatusCode = 200;
                             response.StatusDescription = "OK";
                             response.AddHeader("Cache-Control", "max-age=0, must-revalidate");
-                            webScreenshot(output);
+                            var now = DateTime.Now;
+                            if (now.Subtract(lastScreenshotTime).TotalMicroseconds < 1000) {
+                                // lastScreenshot.Save(output, ImageFormat.Jpeg);
+                                byte[] bytes = BitmapToBytes(lastScreenshot);
+                                response.Close(bytes, true);
+                            } else {
+                                try {
+                                    Bitmap bitmap = TakeSnapshot();
+                                    // bitmap.Save(output, ImageFormat.Jpeg);
+                                    byte[] bytes = BitmapToBytes(bitmap);
+                                    lastScreenshot = bitmap;
+                                    lastScreenshotTime = now;
+                                    response.Close(bytes, true);
+                                } catch (Exception ex) {
+                                    PrintLog(LogLevel.Error, ex.ToString());
+                                }
+                            }
+                            continue;
                         }
                     } else if (url == "/restart") {
                         // restart app
@@ -522,6 +568,13 @@ namespace RemoteAndroid {
             disconnectBtn.Enabled = !enabled;
         }
 
+        public byte[] BitmapToBytes(Bitmap bitmap) {
+            using (MemoryStream stream = new MemoryStream()) {
+                bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                return stream.ToArray();
+            }
+        }
+
         private string ReadFile(string path) {
             if (!File.Exists(path)) return "";
             var result = File.ReadAllText(path);
@@ -571,11 +624,13 @@ namespace RemoteAndroid {
         }
 
         private void powerBtn() {
-            executeAdbCmd("shell input keyevent 26");
+            // executeAdbCmd("shell input keyevent 26");
+            deviceClient.SendKeyEvent("KEYCODE_POWER");
         }
 
         private void unlockScreen() {
-            executeAdbCmd("shell input swipe 300 1000 300 500");
+            // executeAdbCmd("shell input swipe 300 1000 300 500");
+            deviceClient.Swipe(300, 1000, 300, 500, 200);
         }
 
         private int getScreenState() {
@@ -590,24 +645,8 @@ namespace RemoteAndroid {
             return state;
         }
 
-        private void webScreenshot(Stream writeStream) {
-            var now = DateTime.Now;
-            if (now.Subtract(lastScreenshotTime).TotalMicroseconds < 1000) {
-                lastScreenshot.Save(writeStream, ImageFormat.Jpeg);
-                return;
-            }
-            try {
-                Bitmap bitmap = TakeSnapshot();
-                bitmap.Save(writeStream, ImageFormat.Jpeg);
-                lastScreenshot = bitmap;
-                lastScreenshotTime = now;
-            } catch (Exception ex) {
-                PrintLog(LogLevel.Error, ex.ToString());
-            }
-        }
-
         private Bitmap TakeSnapshot() {
-            MemoryStream scrbf = new MemoryStream();
+            /* MemoryStream scrbf = new MemoryStream();
             Process cmd = new Process();
             cmd.StartInfo.FileName = "adb";
             cmd.StartInfo.Arguments = "exec-out screencap";
@@ -622,6 +661,8 @@ namespace RemoteAndroid {
                 bitmap = ConvertToBitmap(bytes);
             }
             cmd.WaitForExit();
+            return bitmap; */
+            Bitmap bitmap = adbClient.GetFrameBuffer(deviceData).ToImage();
             return bitmap;
         }
 

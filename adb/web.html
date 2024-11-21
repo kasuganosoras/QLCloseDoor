@@ -17,7 +17,11 @@
         }
 
         .screenshot {
-            border: 1px solid #ececec;
+            /* border: 1px solid #ececec; */
+            border-top: 2vh solid #333;
+            border-bottom: 2vh solid #333;
+            border-left: 0.5vh solid #333;
+            border-right: 0.5vh solid #333;
             border-radius: 14px;
             overflow: hidden;
             width: 100%;
@@ -25,6 +29,13 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .no-signal {
+            position: absolute;
+            font-size: 2rem;
+            font-weight: bold;
         }
 
         img[src=""] {
@@ -55,14 +66,17 @@
             .card {
                 margin-top: 1rem;
             }
+
             .screenshot {
                 margin-bottom: 1rem;
             }
+
             .card-footer button {
                 display: block;
                 width: 100%;
                 margin-bottom: 0.5rem;
             }
+
             .card-footer button:last-child {
                 margin-bottom: 0px;
             }
@@ -83,6 +97,7 @@
                             <div class="col-sm-5">
                                 <div class="screenshot">
                                     <img src="" class="img-fluid" alt="Screenshot">
+                                    <span class="no-signal text-white">No Signal</span>
                                 </div>
                             </div>
                             <div class="col-sm-7">
@@ -94,7 +109,8 @@
                                         </p>
                                         <p class="card-text"><b>设备名称：</b><span class="info info-device-name">N/A</span>
                                         </p>
-                                        <p class="card-text"><b>运行日志：</b><span class="info text-muted">显示最后 1000 条日志</span></p>
+                                        <p class="card-text"><b>运行日志：</b><span class="info text-muted">显示最后 1000
+                                                条日志</span></p>
                                     </div>
                                     <pre class="info-log" style="height: 50vh; overflow-y: auto;"></pre>
                                 </div>
@@ -113,6 +129,7 @@
             </div>
         </div>
     </div>
+    <canvas id="canvas" style="display:none;"></canvas>
     <script src="https://cfdx.zerodream.net/js/jquery.min.js"></script>
     <script src="https://cfdx.zerodream.net/bootstrap-4/js/bootstrap.min.js"></script>
     <script>
@@ -158,25 +175,51 @@
             var tmp = new Image();
             tmp.src = '/screenshot?token=' + token + '&t=' + new Date().getTime();
             tmp.onload = function () {
-                var dataURL = GetBase64Image(tmp);
-                $('.screenshot img').attr('src', dataURL);
-                $('.screenshot img').show();
+                if (!IsImageBlack(tmp)) {
+                    var dataURL = GetBase64Image(tmp);
+                    $('.screenshot img').attr('src', dataURL);
+                    $('.screenshot img').show();
+                    $('.no-signal').hide();
+                } else {
+                    $('.screenshot img').attr('src', '');
+                    $('.screenshot img').hide();
+                    $('.no-signal').show();
+                }
                 screenshot = { width: tmp.width, height: tmp.height };
                 setTimeout(function () {
                     ReloadScreenshot();
-                }, 100);
+                }, 1);
             };
             tmp.onerror = function () {
                 $('.screenshot img').attr('src', '');
                 $('.screenshot img').hide();
+                $('.no-signal').show();
                 setTimeout(function () {
                     ReloadScreenshot();
                 }, 1000);
             };
         }
 
+        function IsImageBlack(img) {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0, img.width, img.height);
+
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i] !== 0 || data[i + 1] !== 0 || data[i + 2] !== 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         function GetBase64Image(img) {
-            var canvas = document.createElement("canvas");
+            var canvas = document.getElementById('canvas');
             canvas.width = img.width;
             canvas.height = img.height;
             var ctx = canvas.getContext("2d");
@@ -210,14 +253,54 @@
             $(window).resize(function () {
                 CalcElementsSize();
             });
-            $('.screenshot img').on('click', function (e) {
-                var x = e.offsetX / $('.screenshot img').width();
-                var y = e.offsetY / $('.screenshot img').height();
-                var tapX = Math.round(screenshot.width * x);
-                var tapY = Math.round(screenshot.height * y);
-                console.log('Tap at', screenshot.width, screenshot.height, x, y, tapX, tapY);
-                $.get('/click?token=' + token + '&x=' + tapX + '&y=' + tapY, function (data) {
-                    console.log(data);
+
+            let startX, startY, endX, endY, begin;
+            let dragState = 0;
+
+            $('.screenshot img').on('mousedown', function (event) {
+                event.preventDefault();
+                dragState = 1;
+                startX = event.offsetX;
+                startY = event.offsetY;
+                begin = new Date().getTime();
+                console.log('Drag started at:', startX, startY);
+
+                $('.screenshot img').on('mousemove', function (event) {
+                    dragState = 2;
+                });
+
+                $('.screenshot img').on('mouseup', function (event) {
+                    $('.screenshot img').off('mousemove');
+                    $('.screenshot img').off('mouseup');
+                    if (dragState == 2) {
+                        endX = event.offsetX;
+                        endY = event.offsetY;
+                        dragState = 0;
+                        console.log('Drag ended at:', endX, endY);
+                        var x1 = startX / $('.screenshot img').width();
+                        var y1 = startY / $('.screenshot img').height();
+                        var x2 = endX / $('.screenshot img').width();
+                        var y2 = endY / $('.screenshot img').height();
+                        var swipeX1 = Math.round(screenshot.width * x1);
+                        var swipeY1 = Math.round(screenshot.height * y1);
+                        var swipeX2 = Math.round(screenshot.width * x2);
+                        var swipeY2 = Math.round(screenshot.height * y2);
+                        var duration = new Date().getTime() - begin;
+                        console.log('Swipe from', screenshot.width, screenshot.height, x1, y1, swipeX1, swipeY1);
+                        console.log('Swipe to', screenshot.width, screenshot.height, x2, y2, swipeX2, swipeY2);
+                        $.get('/swipe?token=' + token + '&x1=' + swipeX1 + '&y1=' + swipeY1 + '&x2=' + swipeX2 + '&y2=' + swipeY2 + '&sp=' + duration, function (data) {
+                            console.log(data);
+                        });
+                    } else {
+                        var x = event.offsetX / $('.screenshot img').width();
+                        var y = event.offsetY / $('.screenshot img').height();
+                        var tapX = Math.round(screenshot.width * x);
+                        var tapY = Math.round(screenshot.height * y);
+                        console.log('Tap at', screenshot.width, screenshot.height, x, y, tapX, tapY);
+                        $.get('/click?token=' + token + '&x=' + tapX + '&y=' + tapY, function (data) {
+                            console.log(data);
+                        });
+                    }
                 });
             });
             // Init
