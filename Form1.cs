@@ -9,9 +9,10 @@ using DarkModeForms;
 using System.Drawing.Imaging;
 using Microsoft.Win32;
 using System.Diagnostics;
+using System.Text;
 
-namespace QLCloseDoor {
-    public partial class QLCloseDoor : Form {
+namespace RemoteAndroid {
+    public partial class RemoteAndroid : Form {
 
         private AdbClient adbClient;
         private DeviceClient deviceClient;
@@ -19,20 +20,30 @@ namespace QLCloseDoor {
         private bool isConnected;
         private Config config;
         private HttpListener httpListener;
-        private string apiToken;
         private bool isLooping = true;
-        private Thread checkThread, httpThread, restartThread;
-        private int closeWait = 2500;
-        private int apiPort = 14190;
-        private bool autoLockScreen = false;
+        private Thread checkThread, httpThread, restartThread, softwareThread;
         private NotifyIcon notifyIcon;
         private ContextMenuStrip contextMenu;
+        private Process afterPro;
+        private Bitmap lastScreenshot;
+        private DateTime lastScreenshotTime = DateTime.MinValue;
+        private object cachedInfo;
+        private DateTime lastCacheInfo = DateTime.MinValue;
+        /* Configuration */
+        private string apiToken;
+        private int apiPort = 14190;
+        private int closeWait = 2500;
+        private bool autoLockScreen = false;
+        private string afterLaunch, afterLaunchArgs;
+        private string packageName, activityName;
+        /* Misc */
+        private static int SCRBUFLEN = 0;
 
-        public QLCloseDoor() {
+        public RemoteAndroid() {
             // 初始化 NotifyIcon
             notifyIcon = new NotifyIcon();
             notifyIcon.Icon = this.Icon;
-            notifyIcon.Text = "QLCloseDoor";
+            notifyIcon.Text = "Remote Android";
             notifyIcon.Visible = true;
 
             // 创建右键菜单
@@ -46,6 +57,7 @@ namespace QLCloseDoor {
             contextMenu.Items.Add("显示主窗口", null, Open_Click);
             contextMenu.Items.Add("退出", null, Exit_Click);
             notifyIcon.ContextMenuStrip = contextMenu;
+            notifyIcon.DoubleClick += OnIconDoubleClick;
 
             // 处理窗体最小化事件
             this.Resize += new EventHandler(Form_Resize);
@@ -72,6 +84,12 @@ namespace QLCloseDoor {
             }
             config = new Config();
         }
+
+        private void OnIconDoubleClick(object? sender, EventArgs e) {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+        }
+
         private void Form_Resize(object sender, EventArgs e) {
             if (this.WindowState == FormWindowState.Minimized) {
                 this.Hide();
@@ -84,12 +102,12 @@ namespace QLCloseDoor {
                 notifyIcon.ShowBalloonTip(1000, "错误", "当前还未连接到设备", ToolTipIcon.Error);
                 return;
             }
-            var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+            var isStarted = deviceClient.IsAppRunning(packageName);
             if (isStarted) {
-                stopAppCmd("com.qinlin.edoor");
+                stopAppCmd(packageName);
                 notifyIcon.ShowBalloonTip(1000, "提示", "已尝试停止应用", ToolTipIcon.Info);
             } else {
-                startAppCmd("com.qinlin.edoor/.MainActivity");
+                startAppCmd(packageName + "/" + activityName);
                 notifyIcon.ShowBalloonTip(1000, "提示", "已尝试启动应用", ToolTipIcon.Info);
             }
         }
@@ -151,17 +169,6 @@ namespace QLCloseDoor {
                 Application.Exit();
                 return;
             }
-            if (!AdbServer.Instance.GetStatus().IsRunning) {
-                AdbServer server = new AdbServer();
-                StartServerResult result = server.StartServer(@"adb\adb.exe", false);
-                if (result != StartServerResult.Started) {
-                    PrintLog(LogLevel.Error, "无法启动 ADB 服务器");
-                } else {
-                    PrintLog(LogLevel.Info, "ADB 服务器已启动");
-                }
-            } else {
-                PrintLog(LogLevel.Info, "ADB 服务器已在运行中");
-            }
             // config
             btn1X.Text = config.GetConfig("btn1X", "541");
             btn1Y.Text = config.GetConfig("btn1Y", "641");
@@ -180,6 +187,14 @@ namespace QLCloseDoor {
             closeWait = config.GetIntConfig("closeWait", 2500);
             autoLockScreen = config.GetBoolConfig("autoLockScreen", false);
 
+            // after launch
+            afterLaunch = config.GetConfig("afterLaunch", "");
+            afterLaunchArgs = config.GetConfig("afterLaunchArgs", "");
+
+            // package
+            packageName = config.GetConfig("packageName", "com.qinlin.edoor");
+            activityName = config.GetConfig("activityName", ".MainActivity");
+
             // Check is config file exists
             if (!File.Exists("config.ini")) {
                 PrintLog(LogLevel.Info, "配置文件不存在，正在创建...");
@@ -191,6 +206,46 @@ namespace QLCloseDoor {
             // 1 Second Tick
             checkThread = new Thread(() =>
             {
+                USBMode.Visible = true;
+                USBMode.Text = "正在加载...";
+
+                if (!AdbServer.Instance.GetStatus().IsRunning) {
+                    USBMode.Visible = true;
+                    USBMode.Text = "正在启动 ADB 服务器...";
+                    AdbServer server = new AdbServer();
+                    StartServerResult result = server.StartServer(@"adb\adb.exe", false);
+                    if (result != StartServerResult.Started) {
+                        PrintLog(LogLevel.Error, "无法启动 ADB 服务器");
+                    } else {
+                        PrintLog(LogLevel.Info, "ADB 服务器已启动");
+                    }
+                } else {
+                    PrintLog(LogLevel.Info, "ADB 服务器已在运行中");
+                }
+
+                USBMode.Text = "USB 设备模式";
+
+                if (adbClient == null) {
+                    adbClient = new AdbClient();
+                }
+
+                Thread.Sleep(1000);
+                
+                if (adbClient?.GetDevices().Count() > 0) {
+                    deviceData = adbClient.GetDevices().First();
+                    if (deviceData != null && deviceData.Name != "") {
+                        deviceClient = new DeviceClient(adbClient, deviceData);
+                        PrintLog(LogLevel.Info, "已连接：" + deviceData.Name);
+                        SetAdbConfigEnabled(false);
+                        isConnected = true;
+                        USBMode.Visible = true;
+                    } else {
+                        USBMode.Visible = false;
+                    }
+                } else {
+                    USBMode.Visible = false;
+                }
+
                 while (isLooping) {
                     if (isConnected && adbClient != null) {
                         ProcessUpdate();
@@ -216,12 +271,12 @@ namespace QLCloseDoor {
             {
                 while (isLooping) {
                     if (isConnected && adbClient != null) {
-                        var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+                        var isStarted = deviceClient.IsAppRunning(packageName);
                         if (isStarted) {
-                            stopAppCmd("com.qinlin.edoor");
+                            stopAppCmd(packageName);
                         }
                         Thread.Sleep(1000);
-                        startAppCmd("com.qinlin.edoor/.MainActivity");
+                        startAppCmd(packageName + "/" + activityName);
                     }
                     Thread.Sleep(60000 * 60);
                     if (!isLooping) {
@@ -243,6 +298,7 @@ namespace QLCloseDoor {
                     var context = httpListener.GetContext();
                     var request = context.Request;
                     var response = context.Response;
+                    var output = response.OutputStream;
                     var url = request.Url.AbsolutePath;
                     var query = request.Url.Query;
                     // verify token
@@ -252,6 +308,70 @@ namespace QLCloseDoor {
                         response.StatusDescription = "Forbidden";
                         response.Close();
                         continue;
+                    } else if (url == "/") {
+                        string[] lines = logTextbox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+                        int startLine = Math.Max(0, lines.Length - 1000);
+                        string last1000Lines = string.Join(Environment.NewLine, lines.Skip(startLine));
+                        var html = ReadFile("adb\\web.html");
+                        byte[] bytes = Encoding.UTF8.GetBytes(html);
+                        response.StatusCode = 200;
+                        response.StatusDescription = "OK";
+                        response.ContentType = "text/html";
+                        response.ContentLength64 = bytes.Length;
+                        output.Write(bytes, 0, bytes.Length);
+                    } else if (url == "/info") {
+                        try {
+                            if (DateTime.Now.Subtract(lastCacheInfo).TotalMilliseconds > 2000) {
+                                var adbStatus = isConnected ? "已连接" : "已断开";
+                                var appStatus = isConnected && deviceClient != null && deviceClient.IsAppRunning(packageName) ? "运行中" : "已停止";
+                                var deviceName = deviceData != null && deviceData.State == DeviceState.Online ? deviceData.Name : "未知";
+                                var logLines = logTextbox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+                                var startLine = Math.Max(0, logLines.Length - 1000);
+                                var last1000Lines = string.Join(Environment.NewLine, logLines.Skip(startLine));
+
+                                var jsonOutput = new {
+                                    AdbStatus = adbStatus,
+                                    AppStatus = appStatus,
+                                    DeviceName = deviceName,
+                                    Log = last1000Lines
+                                };
+
+                                cachedInfo = jsonOutput;
+
+                                var json = Newtonsoft.Json.JsonConvert.SerializeObject(jsonOutput);
+                                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                                response.StatusCode = 200;
+                                response.StatusDescription = "OK";
+                                response.ContentType = "application/json";
+                                response.ContentLength64 = bytes.Length;
+                                output.Write(bytes, 0, bytes.Length);
+                            } else {
+                                var json = Newtonsoft.Json.JsonConvert.SerializeObject(cachedInfo);
+                                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                                response.StatusCode = 200;
+                                response.StatusDescription = "OK";
+                                response.ContentType = "application/json";
+                                response.ContentLength64 = bytes.Length;
+                                output.Write(bytes, 0, bytes.Length);
+                            }
+                        } catch (Exception ex) {
+                            var logLines = logTextbox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+                            var startLine = Math.Max(0, logLines.Length - 1000);
+                            var last1000Lines = string.Join(Environment.NewLine, logLines.Skip(startLine));
+                            var jsonOutput = new {
+                                AdbStatus = false,
+                                AppStatus = false,
+                                DeviceName = "Unknown",
+                                Log = last1000Lines
+                            };
+                            var json = Newtonsoft.Json.JsonConvert.SerializeObject(jsonOutput);
+                            byte[] bytes = Encoding.UTF8.GetBytes(json);
+                            response.StatusCode = 200;
+                            response.StatusDescription = "OK";
+                            response.ContentType = "application/json";
+                            response.ContentLength64 = bytes.Length;
+                            output.Write(bytes, 0, bytes.Length);
+                        }
                     } else if (url == "/click") {
                         // click button
                         var btnId = HttpUtility.ParseQueryString(query).Get("btn");
@@ -286,19 +406,18 @@ namespace QLCloseDoor {
                     } else if (url == "/screenshot") {
                         // take screenshot
                         if (deviceClient != null) {
-                            var screenshot = adbClient.GetFrameBuffer(deviceData);
                             response.ContentType = "image/jpeg";
                             response.StatusCode = 200;
                             response.StatusDescription = "OK";
-                            Image image = screenshot.ToImage();
-                            image.Save(response.OutputStream, ImageFormat.Jpeg);
+                            response.AddHeader("Cache-Control", "max-age=0, must-revalidate");
+                            webScreenshot(output);
                         }
                     } else if (url == "/restart") {
                         // restart app
                         if (deviceClient != null) {
-                            stopAppCmd("com.qinlin.edoor");
+                            stopAppCmd(packageName);
                             Thread.Sleep(1000);
-                            startAppCmd("com.qinlin.edoor/.MainActivity");
+                            startAppCmd(packageName + "/" + activityName);
                             response.StatusCode = 200;
                             response.StatusDescription = "OK";
                         } else {
@@ -322,13 +441,42 @@ namespace QLCloseDoor {
             });
             httpThread.IsBackground = true;
             httpThread.Start();
+
+            if (afterLaunch != null && afterLaunch != "") {
+                if (!File.Exists(afterLaunch)) {
+                    PrintLog(LogLevel.Warning, "自定义程序不存在，请检查路径是否配置正确：" + afterLaunch);
+                } else {
+                    PrintLog(LogLevel.Info, "执行自定义程序：" + afterLaunch);
+                    // after launch
+                    softwareThread = new Thread(() =>
+                    {
+                        // 创建一个新的进程启动信息
+                        afterPro = new System.Diagnostics.Process();
+                        afterPro.StartInfo.FileName = afterLaunch;
+                        afterPro.StartInfo.Arguments = afterLaunchArgs;
+                        afterPro.StartInfo.RedirectStandardOutput = true;
+                        afterPro.StartInfo.RedirectStandardError = true;
+                        afterPro.StartInfo.UseShellExecute = false;
+                        afterPro.StartInfo.CreateNoWindow = true;
+                        afterPro.Start();
+
+                        // 启动进程并读取输出
+                        while (!afterPro.HasExited) {
+                            string x = afterPro.StandardOutput.ReadLine();
+                            PrintLog(LogLevel.Info, x);
+                        }
+                    });
+                    softwareThread.IsBackground = true;
+                    softwareThread.Start();
+                }
+            }
         }
 
         private void ProcessUpdate() {
             try {
                 if (adbClient != null && deviceClient != null) {
                     if (isConnected) {
-                        var isStarted = deviceClient.IsAppRunning("com.qinlin.edoor");
+                        var isStarted = deviceClient.IsAppRunning(packageName);
                         if (isStarted) {
                             appStatus.Text = "应用运行中";
                             startApp.Enabled = false;
@@ -374,6 +522,12 @@ namespace QLCloseDoor {
             disconnectBtn.Enabled = !enabled;
         }
 
+        private string ReadFile(string path) {
+            if (!File.Exists(path)) return "";
+            var result = File.ReadAllText(path);
+            return result;
+        }
+
         private void connectBtn_Click(object sender, EventArgs e) {
             if (adbClient == null) {
                 adbClient = new AdbClient();
@@ -381,7 +535,7 @@ namespace QLCloseDoor {
             PrintLog(LogLevel.Info, String.Format("正在尝试连接：{0}:{1}", adbHost.Text, adbPort.Text));
             try {
                 var result = adbClient.Connect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
-                PrintLog(LogLevel.Info, "连接信息：" + result);
+                PrintLog(LogLevel.Info, "Adb 返回信息：" + result);
                 deviceData = adbClient.GetDevices().FirstOrDefault();
                 if (deviceData != null && deviceData != default && !result.Contains("cannot")) {
                     deviceClient = new DeviceClient(adbClient, deviceData);
@@ -393,18 +547,18 @@ namespace QLCloseDoor {
                     SetAdbConfigEnabled(true);
                     isConnected = false;
                 }
-            } catch(Exception ex) {
+            } catch (Exception ex) {
                 PrintLog(LogLevel.Error, ex.Message);
             }
         }
 
         private void startApp_Click(object sender, EventArgs e) {
-            startAppCmd("com.qinlin.edoor/.MainActivity");
+            startAppCmd(packageName + "/" + activityName);
             PrintLog(LogLevel.Info, "已尝试启动应用");
         }
 
         private void stopApp_Click(object sender, EventArgs e) {
-            stopAppCmd("com.qinlin.edoor");
+            stopAppCmd(packageName);
             PrintLog(LogLevel.Info, "已尝试停止应用");
         }
 
@@ -436,7 +590,68 @@ namespace QLCloseDoor {
             return state;
         }
 
-        private void executeAdbCmd(string cmd, bool waitForExit =  false) {
+        private void webScreenshot(Stream writeStream) {
+            var now = DateTime.Now;
+            if (now.Subtract(lastScreenshotTime).TotalMicroseconds < 1000) {
+                lastScreenshot.Save(writeStream, ImageFormat.Jpeg);
+                return;
+            }
+            try {
+                Bitmap bitmap = TakeSnapshot();
+                bitmap.Save(writeStream, ImageFormat.Jpeg);
+                lastScreenshot = bitmap;
+                lastScreenshotTime = now;
+            } catch (Exception ex) {
+                PrintLog(LogLevel.Error, ex.ToString());
+            }
+        }
+
+        private Bitmap TakeSnapshot() {
+            MemoryStream scrbf = new MemoryStream();
+            Process cmd = new Process();
+            cmd.StartInfo.FileName = "adb";
+            cmd.StartInfo.Arguments = "exec-out screencap";
+            cmd.StartInfo.RedirectStandardOutput = true;
+            cmd.StartInfo.UseShellExecute = false;
+            cmd.StartInfo.CreateNoWindow = true;
+            cmd.Start();
+            Bitmap bitmap;
+            using (MemoryStream ms = new MemoryStream()) {
+                cmd.StandardOutput.BaseStream.CopyTo(ms);
+                byte[] bytes = ms.ToArray();
+                bitmap = ConvertToBitmap(bytes);
+            }
+            cmd.WaitForExit();
+            return bitmap;
+        }
+
+        private Bitmap ConvertToBitmap(byte[] data) {
+            using (MemoryStream ms = new MemoryStream(data))
+            using (BinaryReader reader = new BinaryReader(ms)) {
+                uint width = reader.ReadUInt32();
+                uint height = reader.ReadUInt32();
+                uint pixelFormat = reader.ReadUInt32();
+                int bytesPerPixel = 4; // Assuming RGBA_8888 format
+                int imageSize = (int)(width * height * bytesPerPixel);
+                byte[] imageData = reader.ReadBytes(imageSize);
+                Bitmap bitmap = new Bitmap((int)width, (int)height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                int index = 0;
+                for (int y = 0; y < height; y++) {
+                    for (int x = 0; x < width; x++) {
+                        byte r = imageData[index++];
+                        byte g = imageData[index++];
+                        byte b = imageData[index++];
+                        byte a = imageData[index++];
+                        Color color = Color.FromArgb(a, r, g, b);
+                        bitmap.SetPixel(x, y, color);
+                    }
+                }
+
+                return bitmap;
+            }
+        }
+
+        private void executeAdbCmd(string cmd, bool waitForExit = false) {
             if (!isConnected) return;
 
             // 创建一个新的进程启动信息
@@ -480,7 +695,7 @@ namespace QLCloseDoor {
             try {
                 var result = adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
                 PrintLog(LogLevel.Info, "已断开连接：" + result);
-            } catch(Exception ex) {
+            } catch (Exception ex) {
                 PrintLog(LogLevel.Error, ex.Message);
             }
             SetAdbConfigEnabled(true);
@@ -491,9 +706,9 @@ namespace QLCloseDoor {
             Thread thread = new Thread(() =>
             {
                 Thread.Sleep(closeWait);
-                stopAppCmd("com.qinlin.edoor");
+                stopAppCmd(packageName);
                 Thread.Sleep(300);
-                startAppCmd("com.qinlin.edoor/.MainActivity");
+                startAppCmd(packageName + "/" + activityName);
                 if (autoLockScreen) {
                     Thread.Sleep(1000);
                     powerBtn();
@@ -523,12 +738,12 @@ namespace QLCloseDoor {
                 int state = getScreenState();
                 if (state == 1) {
                     powerBtn();
-                    Thread.Sleep(500);
+                    Thread.Sleep(10);
                     unlockScreen();
-                    Thread.Sleep(1000);
+                    Thread.Sleep(500);
                 } else if (state == 2) {
                     unlockScreen();
-                    Thread.Sleep(1000);
+                    Thread.Sleep(500);
                 }
                 deviceClient.ClickAsync(pos.X, pos.Y);
                 PrintLog(LogLevel.Info, String.Format("已发送屏幕点击请求：Btn ({0})", BtnId));
@@ -604,6 +819,12 @@ namespace QLCloseDoor {
             config.SetConfig("apiPort", apiPort.ToString());
             config.SetConfig("closeWait", closeWait.ToString());
             config.SetConfig("autoLockScreen", autoLockScreen.ToString());
+            // after launch
+            config.SetConfig("afterLaunch", afterLaunch);
+            config.SetConfig("afterLaunchArgs", afterLaunchArgs);
+            // package
+            config.SetConfig("packageName", packageName);
+            config.SetConfig("activityName", activityName);
 
             config.SaveConfig();
         }
@@ -656,16 +877,38 @@ namespace QLCloseDoor {
             }
         }
 
+        private void ExecuteCmd(string cmd, string args) {
+            try {
+                ProcessStartInfo processStartInfo = new ProcessStartInfo();
+                processStartInfo.FileName = cmd;
+                processStartInfo.Arguments = args;
+                processStartInfo.UseShellExecute = true;
+                Process process = Process.Start(processStartInfo);
+                process.WaitForExit();
+            } catch (Exception ex) {
+                PrintLog(LogLevel.Error, ex.Message);
+            }
+        }
+
         private void FuckQL_FormClosing(object sender, FormClosingEventArgs e) {
             isConnected = false;
             isLooping = false;
-            if (adbClient == null || adbHost == null || adbPort == null) { return; }
+        }
+
+        private void RemoteAndroid_FormClosed(object sender, FormClosedEventArgs e) {
             try {
-                adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                if (adbClient != null && adbHost != null && adbPort != null) {
+                    adbClient.Disconnect(String.Format("{0}:{1}", adbHost.Text, adbPort.Text));
+                }
             } catch { }
             try {
                 AdbServer.Instance.StopServer();
             } catch { }
+            try {
+                afterPro.Kill();
+            } catch { }
+            notifyIcon?.Icon?.Dispose();
+            notifyIcon?.Dispose();
         }
     }
 

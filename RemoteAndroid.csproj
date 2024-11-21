@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="AdvancedSharpAdbClient" Version="3.3.13" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">

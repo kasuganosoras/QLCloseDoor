@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Remote Android</title>
+    <link rel="stylesheet" href="https://cfdx.zerodream.net/bootstrap-4/css/bootstrap.min.css">
+    <style>
+        .card {
+            margin-top: 3rem;
+        }
+
+        .card-title {
+            margin-bottom: 0rem;
+        }
+
+        .screenshot {
+            border: 1px solid #ececec;
+            border-radius: 14px;
+            overflow: hidden;
+            width: 100%;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        img[src=""] {
+            display: none;
+        }
+
+        .info-group .card-text {
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #ececec;
+        }
+
+        .info-group .card-text:last-child {
+            border-bottom: none;
+        }
+
+        .info-group .info {
+            float: right;
+        }
+
+        .info-group .info-log {
+            border: 1px solid #ececec;
+            border-radius: 12px;
+            padding: 0.5rem;
+            margin-bottom: 0px;
+        }
+
+        @media (max-width: 768px) {
+            .card {
+                margin-top: 1rem;
+            }
+            .screenshot {
+                margin-bottom: 1rem;
+            }
+            .card-footer button {
+                display: block;
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+            .card-footer button:last-child {
+                margin-bottom: 0px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Remote Android</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-sm-5">
+                                <div class="screenshot">
+                                    <img src="" class="img-fluid" alt="Screenshot">
+                                </div>
+                            </div>
+                            <div class="col-sm-7">
+                                <div class="info-group">
+                                    <div class="info-text-list">
+                                        <p class="card-text"><b>Adb 状态：</b><span class="info info-adb-status">N/A</span>
+                                        </p>
+                                        <p class="card-text"><b>App 状态：</b><span class="info info-app-status">N/A</span>
+                                        </p>
+                                        <p class="card-text"><b>设备名称：</b><span class="info info-device-name">N/A</span>
+                                        </p>
+                                        <p class="card-text"><b>运行日志：</b><span class="info text-muted">显示最后 1000 条日志</span></p>
+                                    </div>
+                                    <pre class="info-log" style="height: 50vh; overflow-y: auto;"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer text-center">
+                        <button type="button" class="btn btn-danger" onclick="PowerBtn()">电源按键</button>
+                        <button type="button" class="btn btn-success" onclick="Unlock()">解锁屏幕</button>
+                        <button type="button" class="btn btn-primary" onclick="Restart()">重启应用</button>
+                        <button type="button" class="btn btn-secondary" onclick="ClickBtn(1)">按钮 1</button>
+                        <button type="button" class="btn btn-secondary" onclick="ClickBtn(2)">按钮 2</button>
+                        <button type="button" class="btn btn-secondary" onclick="ClickBtn(3)">按钮 3</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cfdx.zerodream.net/js/jquery.min.js"></script>
+    <script src="https://cfdx.zerodream.net/bootstrap-4/js/bootstrap.min.js"></script>
+    <script>
+        var token;
+        var screenshot;
+
+        function PowerBtn() {
+            $.get('/powerbtn?token=' + token, function (data) {
+                console.log(data);
+            });
+        }
+
+        function Unlock() {
+            $.get('/unlock?token=' + token, function (data) {
+                console.log(data);
+            });
+        }
+
+        function Restart() {
+            $.get('/restart?token=' + token, function (data) {
+                console.log(data);
+            });
+        }
+
+        function ClickBtn(btn) {
+            $.get('/click?token=' + token + '&btn=' + btn, function (data) {
+                console.log(data);
+            });
+        }
+
+        function CalcElementsSize() {
+            var width = $('.screenshot').width();
+            var height = width * 16 / 9;
+            $('.screenshot').height(height);
+            // log window
+            var infoGroupHeight = height - $('.info-group .info-text-list').height();
+            console.log(height, infoGroupHeight);
+            $('.info-group .info-log').height(infoGroupHeight - 16);
+        }
+
+        function ReloadScreenshot() {
+            // $('.screenshot img').attr('src', '/screenshot?token=' + token + '&t=' + new Date().getTime());
+            var tmp = new Image();
+            tmp.src = '/screenshot?token=' + token + '&t=' + new Date().getTime();
+            tmp.onload = function () {
+                var dataURL = GetBase64Image(tmp);
+                $('.screenshot img').attr('src', dataURL);
+                $('.screenshot img').show();
+                screenshot = { width: tmp.width, height: tmp.height };
+                setTimeout(function () {
+                    ReloadScreenshot();
+                }, 100);
+            };
+            tmp.onerror = function () {
+                $('.screenshot img').attr('src', '');
+                $('.screenshot img').hide();
+                setTimeout(function () {
+                    ReloadScreenshot();
+                }, 1000);
+            };
+        }
+
+        function GetBase64Image(img) {
+            var canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            var ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            var dataURL = canvas.toDataURL("image/png");
+            return dataURL;
+        }
+
+        function RefreshInfo(cb) {
+            $.get('/info?token=' + token, function (data) {
+                console.log(data);
+                $('.info-adb-status').text(data.AdbStatus);
+                $('.info-app-status').text(data.AppStatus);
+                $('.info-device-name').text(data.DeviceName);
+                $('.info-log').text(data.Log);
+                $('.info-log').scrollTop($('.info-log')[0].scrollHeight);
+                if (cb) {
+                    cb();
+                }
+            });
+        }
+
+        $(document).ready(function () {
+            // get token from query string
+            token = new URLSearchParams(window.location.search).get('token');
+            if (token == null) {
+                alert('Token not found');
+                return;
+            }
+            // Events
+            $(window).resize(function () {
+                CalcElementsSize();
+            });
+            $('.screenshot img').on('click', function (e) {
+                var x = e.offsetX / $('.screenshot img').width();
+                var y = e.offsetY / $('.screenshot img').height();
+                var tapX = Math.round(screenshot.width * x);
+                var tapY = Math.round(screenshot.height * y);
+                console.log('Tap at', screenshot.width, screenshot.height, x, y, tapX, tapY);
+                $.get('/click?token=' + token + '&x=' + tapX + '&y=' + tapY, function (data) {
+                    console.log(data);
+                });
+            });
+            // Init
+            CalcElementsSize();
+            ReloadScreenshot();
+            RefreshInfo(function () {
+                setTimeout(function () {
+                    RefreshInfo();
+                }, 1000);
+            });
+        });
+    </script>
+</body>
+
+</html>

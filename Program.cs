@@ -1,4 +1,4 @@
-namespace QLCloseDoor
+namespace RemoteAndroid
 {
     internal static class Program
     {
@@ -13,7 +13,7 @@ namespace QLCloseDoor
             ApplicationConfiguration.Initialize();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new QLCloseDoor());
+            Application.Run(new RemoteAndroid());
         }
     }
 }

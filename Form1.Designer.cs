@@ -1,7 +1,7 @@
 ﻿
-namespace QLCloseDoor
+namespace RemoteAndroid
 {
-    partial class QLCloseDoor
+    partial class RemoteAndroid
     {
         /// <summary>
         ///  Required designer variable.
@@ -49,6 +49,7 @@ namespace QLCloseDoor
             stopApp = new Button();
             startApp = new Button();
             groupBox1 = new GroupBox();
+            USBMode = new Label();
             disconnectBtn = new Button();
             connectBtn = new Button();
             label2 = new Label();
@@ -220,7 +221,7 @@ namespace QLCloseDoor
             groupBox4.Size = new Size(281, 141);
             groupBox4.TabIndex = 7;
             groupBox4.TabStop = false;
-            groupBox4.Text = "开门控制";
+            groupBox4.Text = "快捷按钮";
             // 
             // button3
             // 
@@ -230,7 +231,7 @@ namespace QLCloseDoor
             button3.Name = "button3";
             button3.Size = new Size(268, 33);
             button3.TabIndex = 6;
-            button3.Text = "开门按钮 3";
+            button3.Text = "按钮 3";
             button3.UseVisualStyleBackColor = true;
             button3.Click += button3_Click;
             // 
@@ -242,7 +243,7 @@ namespace QLCloseDoor
             button2.Name = "button2";
             button2.Size = new Size(268, 33);
             button2.TabIndex = 5;
-            button2.Text = "开门按钮 2";
+            button2.Text = "按钮 2";
             button2.UseVisualStyleBackColor = true;
             button2.Click += button2_Click;
             // 
@@ -254,7 +255,7 @@ namespace QLCloseDoor
             button1.Name = "button1";
             button1.Size = new Size(268, 33);
             button1.TabIndex = 4;
-            button1.Text = "开门按钮 1";
+            button1.Text = "按钮 1";
             button1.UseVisualStyleBackColor = true;
             button1.Click += button1_Click_1;
             // 
@@ -310,6 +311,7 @@ namespace QLCloseDoor
             // groupBox1
             // 
             groupBox1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            groupBox1.Controls.Add(USBMode);
             groupBox1.Controls.Add(disconnectBtn);
             groupBox1.Controls.Add(connectBtn);
             groupBox1.Controls.Add(label2);
@@ -322,6 +324,18 @@ namespace QLCloseDoor
             groupBox1.TabIndex = 5;
             groupBox1.TabStop = false;
             groupBox1.Text = "ADB  配置";
+            // 
+            // USBMode
+            // 
+            USBMode.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            USBMode.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            USBMode.ForeColor = SystemColors.WindowText;
+            USBMode.Location = new Point(6, 19);
+            USBMode.Name = "USBMode";
+            USBMode.Size = new Size(271, 87);
+            USBMode.TabIndex = 6;
+            USBMode.Text = "USB 设备模式";
+            USBMode.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // disconnectBtn
             // 
@@ -417,7 +431,7 @@ namespace QLCloseDoor
             connectStatus.Size = new Size(109, 17);
             connectStatus.Text = "状态：未连接 ADB";
             // 
-            // QLCloseDoor
+            // RemoteAndroid
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
@@ -425,9 +439,10 @@ namespace QLCloseDoor
             Controls.Add(statusStrip1);
             Controls.Add(splitContainer1);
             MinimumSize = new Size(914, 643);
-            Name = "QLCloseDoor";
-            Text = "亲邻不开门 by Akkariin";
+            Name = "RemoteAndroid";
+            Text = "Remote Android by Akkariin";
             FormClosing += FuckQL_FormClosing;
+            FormClosed += RemoteAndroid_FormClosed;
             Load += Form1_Load;
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);
@@ -478,5 +493,6 @@ namespace QLCloseDoor
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel connectStatus;
         private TextBox logTextbox;
+        private Label USBMode;
     }
 }
